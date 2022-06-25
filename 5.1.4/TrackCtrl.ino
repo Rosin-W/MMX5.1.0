@@ -1,0 +1,86 @@
+void TrackCtrl(int Light)//已有初步安全措施，这里仅能避免一次过线，而且在两灯没有同时出错的情况下
+{//准备抓取物块时1灯或2灯对齐的精调,
+  TrackRead();
+  if(section==0)
+  {section=1;stage++;TrackZERO();MotorSTOP();}//完成精调动作后进入主流程的下一阶段
+  if(section==1)
+  {//斜向移出，防止略过线后电机速度调整期间后退引起计线
+    AngleCtrl();
+    Move(-45,CtrlSpd+15);
+    if(n>0.7*sec){section=6;n=0;}
+  }
+  if(section==6)
+  {//角度校准
+    ReadMPU();
+    if(abs(BodyAngle-BaseAngle)>3)
+    {
+      if((BodyAngle-BaseAngle)<0){Move(360,CtrlSpd-30);}//顺时针转
+      else{Move(-360,CtrlSpd-30);}//逆时针转
+    }
+    else
+    {
+      MotorSTOP();delay(100);
+      if(abs(BodyAngle-BaseAngle)<5){section=2;}
+    }
+  }
+  if(section==2)
+  {//向前走使指定灯与黑线对齐
+    if(Light==1)
+    {
+      if(T1==1)//一旦扫到黑线就进入下一段横向移动，所以不需要避免重复计数
+      {MotorSTOP();section=3;}//若扫到则进入下一段
+      else if(T2==1&&PrvT2==0)//从白到黑，这里可能引起反复横跳，所以需要避免重复计数？
+      {MotorSTOP();section=4;}//若过线使其他灯扫到黑线则退回重扫
+      else//没到达指定位置的情况下，继续向前移动
+      {Move(0,CtrlSpd);}
+    }
+    else if(Light==2)
+    {
+      if(T2==1)
+      {MotorSTOP();section=3;}
+      else if(T2==1&&PrvT2==0)
+      {MotorSTOP();section=4;}
+      else
+      {Move(0,CtrlSpd);}
+    }
+  }
+  
+  if(section==3)
+  {//向右走使4灯与黑线对齐
+    AngleCtrl();
+    if((T4==1)&&(PrvT4==0))
+    {MotorSTOP();section=0;}
+    else if(T3==1)
+    {MotorSTOP();section=5;}
+    else
+    {Move(90,CtrlSpd-5);}
+  }
+  
+  if(Light==1)
+  {//指定横向灯过线安全措施向后走
+    if(section==4)
+    {
+      if(T1==1)
+      {MotorSTOP();section=3;}//若扫到则进入横向调整阶段
+      else 
+      {Move(180,CtrlSpd);}
+    }
+  }
+  if(Light==2)
+  {
+    if(section==4)
+    {
+      if(T2==1)
+      {MotorSTOP();section=3;}
+      else 
+      {Move(180,CtrlSpd);}
+    }
+  }
+  if(section==5)
+  {//4灯过线安全措施向左走
+    if(T4==1)
+    {MotorSTOP();section=0;}
+    else
+    {Move(-90,CtrlSpd-10);}
+  }
+}

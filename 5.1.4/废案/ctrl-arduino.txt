@@ -1,0 +1,313 @@
+/*******888888888888888**电机指定角度速度行驶、指定距离行驶（正在施工）********************/
+void Move(float MoveAngle, float basespeed)
+{//固定角度行驶
+  MotorA = basespeed*sin((MoveAngle+45)*3.14/180);
+  MotorB = basespeed*cos((MoveAngle+45)*3.14/180);
+  MotorC = basespeed*cos((MoveAngle+45)*3.14/180);
+  MotorD = basespeed*sin((MoveAngle+45)*3.14/180);
+}
+/**********注********
+麦轮定义及安装：    四轮运动速度：
+\\------//      A:'^'-,_,-  (向前为正方向)
+ |A    B|       B:'-,_,-'^  (顺时针，每格为45°)
+ |(俯 视)|       C:'-,_,-'^  (正弦曲线，请意会)
+ |C    D|       D:'^'-,_,- 
+//------\\      
+sin()与cos()函数中需要将表示角度的浮点型float数值转换为弧度rad值
+Arduino中自带的Angle函数是将角度浮点型转换为度分秒，此处不可用
+另：可以尝试修改函数至可以移动固定长度
+示例Move(float 移动角度,float 车体速度,float 移动距离)
+**********************/
+/*
+void Move(float MoveAngle, float basespeed)
+{//固定角度距离行驶
+  MotorA = basespeed*sin((MoveAngle+45)*3.14/180);
+  MotorB = basespeed*cos((MoveAngle+45)*3.14/180);
+  MotorC = basespeed*cos((MoveAngle+45)*3.14/180);
+  MotorD = basespeed*sin((MoveAngle+45)*3.14/180);
+  DXgoal = sin(MoveAngle*3.14/180)*basespeed;
+  DYgoal = cos(MoveAngle*3.14/180)*basespeed;
+  dLxyA = spdA/60000*50*235;
+  dLxyB = spdB/60000*50*235;
+  dLxyC = spdC/60000*50*235;
+  dLxyD = spdD/60000*50*235;
+  Lx0 += dLxyA - dLxyB - dLxyC +dLxyD;
+  Ly0 += dLxyA + dLxyB + dLxyC +dLxyD;
+  //接下来斜向以Lx0为基准，用AC电机调整Y，本质和直线环相同，还没想好怎么写
+  //但如果基准的Lx0过小则不准，尤其是往前的时候
+  //所以可以分区讨论分别以X和Y为基准，绝对值0~45和135~180以Y，45~135以X
+  {
+    if((abs(MoveAngle)<45)||(abs(MoveAngle)>135))
+    {DErr = DYgoal - dLy0;}
+    else
+    {DErr = DXgoal - dLx0;}
+  }
+  DInt += DErr;
+  DDif = DPrvErr -DErr;
+  //以上本质就是个直线闭环，“基准”的积分接近指定距离值的时候也需要控制算法
+  //大概不能一开始就对移动总长度作控制，不然刚开始一段会全速前进，对误差影响很大
+  //未完
+ */
+
+/***********************************角度控制，保持车体向前*************************************/
+float AKp = 0.1;//角度PID参数
+float AKi = 0.000;
+float AKd = 0.0;
+
+float APrvErr = 0.0;//需要继承的几个PID参数
+float ApidInt = 0.0;
+
+void setup_MPU()
+{
+  JY901.StartIIC();//使用IIC通讯，也可以使用串口
+}
+
+void ReadMPU()
+{//测算车体偏航角度（保持车体向前）
+  JY901.GetAngle();//获取角度原始值
+  BodyAngle = -(float)JY901.stcAngle.Angle[2]/32768*180;//计算Z轴旋转角度(顺时针)
+}
+
+void AngleCtrl()
+{//角度控制，使车身保持向前（未调试）
+  float ApidErr = BodyAngle;
+  ApidInt = ApidInt + BodyAngle;
+  float ApidDif = ApidErr - APrvErr;
+  APrvErr = ApidErr;
+  float ApidVal = AKp * ApidErr + AKi * ApidInt + AKd * ApidDif;
+  MotorSpdA -= ApidVal;
+  MotorSpdB += ApidVal;
+  MotorSpdC -= ApidVal;
+  MotorSpdD += ApidVal;
+}
+
+
+
+
+
+
+/**********************************************电机及PID*******************************************/
+/*电机相关引脚定义*/
+/*!!!注意P9P10为舵机预留；注意P13连了自带LED在刚启动会闪两下*/
+int PWMA1 = 12;  
+int PWMA2 = 13;
+int PWMB1 = 11;  
+int PWMB2 = 8;
+int PWMC1 = 6;
+int PWMC2 = 7;
+int PWMD1 = 5; 
+int PWMD2 = 4;
+
+/*电机PID相关参数定义*/
+float MKp = 0.05;
+float MKi = 0.0002;
+float MKd = 0.5;
+
+float MPrvErrA = 0.0;//需要继承的几个PID参数
+float MpidIntA = 0.0;
+float MPrvErrB = 0.0;
+float MpidIntB = 0.0;
+float MPrvErrC = 0.0;
+float MpidIntC = 0.0;
+float MPrvErrD = 0.0;
+float MpidIntD = 0.0;
+
+void setup_motor()
+{//电机输出初始化
+  pinMode(PWMA1,OUTPUT);
+  pinMode(PWMA2,OUTPUT);
+  pinMode(PWMB1,OUTPUT);
+  pinMode(PWMB2,OUTPUT);
+  pinMode(PWMC1,OUTPUT);
+  pinMode(PWMC2,OUTPUT);
+  pinMode(PWMD1,OUTPUT);
+  pinMode(PWMD2,OUTPUT);
+}
+
+void Motor()
+{
+//  SpeedExchange();//当预设速度发生较大改变时，改变PWMPID初始值，有助快速响应
+  MotorPWM(MotorPWMA,MotorPWMB,MotorPWMC,MotorPWMD);
+//  MotorPID(MotorA,spdA,MpidIntA,MPrvErrA,MotorPWMA);//尝试用函数，未果
+  MotorPIDA();
+  MotorPIDB();
+  MotorPIDC();
+  MotorPIDD();
+}
+
+void MotorPWM(int pwm1,int pwm2,int pwm3,int pwm4)
+{//电机PWM输出，定义向前为正转
+  if(pwm1 > 0)    {analogWrite(PWMA1,pwm1);analogWrite(PWMA2,0);}
+  else              {analogWrite(PWMA1,0);analogWrite(PWMA2,-pwm1);}
+  if(pwm2 > 0)    {analogWrite(PWMB1,0);analogWrite(PWMB2,pwm2);}
+  else              {analogWrite(PWMB1,-pwm2);analogWrite(PWMB2,0);}
+  if(pwm3 > 0)    {analogWrite(PWMC1,pwm3);analogWrite(PWMC2,0);}
+  else              {analogWrite(PWMC1,0);analogWrite(PWMC2,-pwm3);}
+  if(pwm4 > 0)    {analogWrite(PWMD1,0);analogWrite(PWMD2,pwm4);}
+  else              {analogWrite(PWMD1,-pwm4);analogWrite(PWMD2,0);}
+}
+
+void MotorPIDA()
+{//PID控制程序，下同
+  float MpidErrA = MotorSpdA - spdA;    //比例Proportion
+  MpidIntA += MpidErrA;               //积分Integration
+  float MpidDifA = MpidErrA - MPrvErrA;//微分Differential
+  MotorPWMA += MKp*MpidErrA + MKi*MpidIntA + MKd*MpidDifA;
+  MPrvErrA = MpidErrA;
+  if (MotorPWMA > 150) {MotorPWMA = 150;}//将PWM值限定
+  if (MotorPWMA < -150) {MotorPWMA = -150;}
+}
+
+void MotorPIDB()
+{
+  float MpidErrB = MotorSpdB - spdB;
+  MpidIntB += MpidErrB;
+  float MpidDifB = MpidErrB - MPrvErrB;
+  MotorPWMB += MKp*MpidErrB + MKi*MpidIntB + MKd*MpidDifB;
+  MPrvErrB = MpidErrB;
+  if (MotorPWMB > 150) {MotorPWMB = 150;}
+  if (MotorPWMB < -150) {MotorPWMB = -150;}
+}
+void MotorPIDC()
+{
+  float MpidErrC = MotorSpdC - spdC;
+  MpidIntC += MpidErrC;
+  float MpidDifC = MpidErrC - MPrvErrC;
+  MotorPWMC += MKp*MpidErrC + MKi*MpidIntC + MKd*MpidDifC;
+  MPrvErrC = MpidErrC;
+  if (MotorPWMC > 150) {MotorPWMC = 150;}
+  if (MotorPWMC < -150) {MotorPWMC = -150;}
+}
+void MotorPIDD()
+{
+  float MpidErrD = MotorSpdD - spdD;
+  MpidIntD += MpidErrD;
+  float MpidDifD = MpidErrD - MPrvErrD;
+  MotorPWMD += MKp*MpidErrD + MKi*MpidIntD + MKd*MpidDifD;
+  MPrvErrD = MpidErrD;
+  if (MotorPWMD > 150) {MotorPWMD = 150;}
+  if (MotorPWMD < -150) {MotorPWMD = -150;}
+}
+
+/*void MotorPID(float Motor, float spd, float MpidInt, float MPrvErr,float MotorPWM)
+{//PID控制程序（可实现P闭环，待调试）
+  float MpidErr = Motor - spd;
+  MpidInt += MpidErr;
+  float MpidDif = MpidErr - MPrvErr;
+  MotorPWM += MKp*MpidErr + MKi*MpidInt + MKd*MpidDif;
+  MPrvErr = MpidErr;
+  if (MotorPWM > 150) {MotorPWM = 150;}
+  if (MotorPWM < -150) {MotorPWM = -150;}
+  return MotorPWM,MPrvErr;
+}*/
+
+float PrvMA = 0.0;
+float PrvMB = 0.0;
+float PrvMC = 0.0;
+float PrvMD = 0.0;
+void SpeedExchange()
+{//当预设速度发生较大改变时，改变PWMPID初始值，有助快速响应
+  {
+    if((PrvMA-MotorA)>10)
+    {MotorPWMA = MotorA/2;}
+    if((PrvMB-MotorB)>10)
+    {MotorPWMB = MotorB/2;}
+    if((PrvMC-MotorC)>10)
+    {MotorPWMC = MotorC/2;}
+    if((PrvMD-MotorD)>10)
+    {MotorPWMD = MotorD/2;}
+  }
+  PrvMA = MotorA;
+  PrvMB = MotorB;
+  PrvMC = MotorC;
+  PrvMD = MotorD;
+}
+/***********************************************编码器测速*******************************************/
+/*编码器相关引脚定义*/
+/*注意：MEGA外部中断引脚号：2，3，21，20，19，18，分别对应interrupt0~5
+编码器A相需要接中断引脚*/
+#define EncA 3 //编码器A相  
+#define DirA 26//编码器B相
+#define EncB 2  
+#define DirB 25
+#define EncC 18
+#define DirC 24 
+#define EncD 19 
+#define DirD 23
+
+/*编码器测速相关参数定义*/
+float countA = 0;//计数，由于需要计算speed是浮点型，故此处不能用整型
+float countB = 0;
+float countC = 0;
+float countD = 0;
+int interval = 5;//每5ms测量一次时间
+int ppr = 16;//每圈脉冲数量，硬件决定
+int spdrate = 43.8;//电机减速比，硬件决定
+const double samptime = 25;//速度计算定时中断时长，间隔时间越长越精确但滞后越大
+
+void setup_Encoder()
+{//编码器初始化
+  attachInterrupt(digitalPinToInterrupt(EncA),EncodeA,FALLING);//编码器外部中断
+  attachInterrupt(digitalPinToInterrupt(EncB),EncodeB,FALLING);//使用下降沿中断
+  attachInterrupt(digitalPinToInterrupt(EncC),EncodeC,FALLING);//若使用上升沿或跳变沿中断需谨慎
+  attachInterrupt(digitalPinToInterrupt(EncD),EncodeD,FALLING);//注意逻辑关系与触法次数
+  FlexiTimer2::set(samptime, SpeedCount);//每samptime毫秒执行一次Read程序
+  FlexiTimer2::start();//定时中断开启
+  pinMode(EncA,INPUT);
+  pinMode(DirA,INPUT);
+  pinMode(EncB,INPUT);
+  pinMode(DirB,INPUT);
+  pinMode(EncC,INPUT);
+  pinMode(DirC,INPUT);
+  pinMode(EncD,INPUT);
+  pinMode(DirD,INPUT);
+}
+
+void EncodeA()
+{//A编码器读取计数
+  if((millis()-interval)>0.1)
+  {//A
+    if((digitalRead(EncA)==LOW)&&(digitalRead(DirA)==HIGH)) {countA++;}
+    else  {countA--;}
+  }
+}
+
+void EncodeB()
+{//B编码器读取计数
+  if((millis()-interval)>0.1)
+  {//B
+    if((digitalRead(EncB)==LOW)&&(digitalRead(DirB)==HIGH)) {countB++;}
+    else  {countB--;}
+  }
+}
+
+void EncodeC()
+{//C编码器读取计数
+  if((millis()-interval)>0.1)
+  {//C
+    if((digitalRead(EncC)==LOW)&&(digitalRead(DirC)==HIGH)) {countC++;}
+    else  {countC--;}
+  }
+}
+
+void EncodeD()
+{//D编码器读取计数
+  if((millis()-interval)>0.1)
+  {//D
+    if((digitalRead(EncD)==LOW)&&(digitalRead(DirD)==HIGH)) {countD++;}
+    else  {countD--;}
+  }
+}
+
+void SpeedCount()
+{ //速度计算。精度与每圈脉冲ppr、减速比spdrate、中断时长samptime有关。
+  //若速度低精度要求高，可使用光电编码器，光电编码器线数过高则arduino读取不完全
+  spdA = (-countA/ppr)*(1000/samptime)*60/spdrate;//速度单位rpm，向前正方向
+  countA = 0;//count归零
+  spdB = (countB/ppr)*(1000/samptime)*60/spdrate;
+  countB = 0;
+  spdC = (-countC/ppr)*(1000/samptime)*60/spdrate;
+  countC = 0;
+  spdD = (countD/ppr)*(1000/samptime)*60/spdrate;
+  countD = 0;
+}
