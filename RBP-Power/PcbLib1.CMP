@@ -1,0 +1,15 @@
+Component   : ZIGBEE
+PCB Library : PcbLib1.PcbLib
+Date        : 2021/12/23
+Time        : 12:49:04
+
+
+
+Dimension : 0.21 x 0.51 in
+
+ Layer(s)              Pads(s)  Tracks(s)  Fill(s)  Arc(s)  Text(s)
+--------------------------------------------------------------------
+ Multi Layer                 4          0        0       0        0
+ Top Overlay                 0          4        0       0        0
+--------------------------------------------------------------------
+ Total                       4          4        0       0        0
